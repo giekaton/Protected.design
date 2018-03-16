@@ -9,7 +9,7 @@ Server that does the tx signing contains the private key and other sensitive inf
 ## How to run the app? ##
 
 1. Install fresh Wordpress on your Apache web server.
-2. Upload all files and folders from this repo to your Wordpress wp-content/themes/protected.design folder.
+2. Upload Protected.design folder from this repository to your Wordpress wp-content/themes/ folder.
 3. Update includes/_auth.php and includes/_auth.js files with your credentials.
 4. Open includes/create_db.php file in your browser. It will create the necessary database table.
 5. Activate Protected.design theme in your Wordpress settings.
