@@ -1,25 +1,11 @@
 <html>
 
-<?php
-
-
-
-$clientToken = Braintree_ClientToken::generate();
-
-?>
+<?php $clientToken = Braintree_ClientToken::generate(); ?>
 
 <script>clientToken = '<?php echo($clientToken) ?>';</script>
 
-<head>
-		<!-- Global site tag (gtag.js) - Google Analytics -->
-		<script async src="https://www.googletagmanager.com/gtag/js?id=UA-57930548-13"></script>
-		<script>
-		window.dataLayer = window.dataLayer || [];
-		function gtag(){dataLayer.push(arguments);}
-		gtag('js', new Date());
 
-		gtag('config', 'UA-57930548-13');
-		</script>
+<head>
 
 		<!-- COMMON TAGS -->
 		<meta charset="utf-8">
@@ -52,12 +38,15 @@ $clientToken = Braintree_ClientToken::generate();
 	
 		<script src="<?php echo get_stylesheet_directory_uri(); ?>/includes/dropin.min.js"></script>
 		<script src="<?php echo get_stylesheet_directory_uri(); ?>/includes/_auth.js"></script>
-		<script src="<?php echo get_stylesheet_directory_uri(); ?>/includes/vue.js"></script>
+
+		<!-- <script src="<?php echo get_stylesheet_directory_uri(); ?>/includes/vue.js"></script> -->
+		<script src="<?php echo get_stylesheet_directory_uri(); ?>/includes/vue.min.js"></script>
+
 		<script src="<?php echo get_stylesheet_directory_uri(); ?>/includes/vue-resource.min.js"></script>
 
-		<link href="<?php echo get_stylesheet_directory_uri(); ?>/app-styles.css?v=019" rel="stylesheet">
+		<link href="<?php echo get_stylesheet_directory_uri(); ?>/app-styles.css?v=033" rel="stylesheet">
 
-		<link href="https://fonts.googleapis.com/css?family=PT+Mono|Source+Sans+Pro" rel="stylesheet">
+		<link href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:400,700" rel="stylesheet">
 
 </head>
 

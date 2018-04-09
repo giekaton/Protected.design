@@ -27,6 +27,13 @@ Vue.component('app-home', {
       app.verify = !app.verify;
       app.home = !app.home;
       window.scrollTo(0, 0);
+      
+      data_verify.hash = '';
+      data_verify.state_hash_calculated = false;
+      data_verify.text_file_input = 'Drag and drop or click to select your design file to verify it';
+      data_verify.text_verify_result = '';
+      data_verify.text_verify_link = '';
+      data_verify.state_dragdropfile = '';
     },
     file_input_click: function() {
       data.state_dragdropfile = false;
@@ -83,15 +90,18 @@ Vue.component('app-home', {
               data_protected_design.text_status = response.body.status;
               data_protected_design.text_file_size = response.body.file_size + " bytes";
               data_protected_design.text_message_ascii = hex2ascii(data_protected_design.message_hex);
-              data_protected_design.text_hash = data_protected_design.hash.substring(0,40);
+              data_protected_design.text_hash = data_protected_design.hash;
               data_protected_design.text_tx_hash = response.body.tx_hash;
-              data_protected_design.text_tx_url = "https://ropsten.etherscan.io/tx/" + data_protected_design.text_tx_hash;
+              data_protected_design.text_tx_url = etherscan_url + "/tx/" + data_protected_design.text_tx_hash;
+              if (response.body.tx_timestamp.length > 1) {
+                data_protected_design.text_tx_timestamp = response.body.tx_timestamp;
+              }
       
               // Check if design has a preview and if not, then show message
               if (preview_src == "") {
                 data_protected_design.preview_image = false;
                 data_protected_design.preview_false = true;
-                data_protected_design.text_file_input = "Preview is not available for this file format.";
+                data_protected_design.text_file_input = "Preview is not available for this file format";
               }
             }, response => {
               // error callback
@@ -131,8 +141,8 @@ Vue.component('app-home', {
             var sha256_hash = CryptoJS.SHA256(file_wordArr); // calculate SHA256 hash
             
             data.hash = sha256_hash.toString();
-            data.text_hash = data.hash.substring(0,40);
-            data.html_linkhash = "<span class='linkhash'>" + home_url + data.hash.substring(0,12) + "</span>";
+            data.text_hash = data.hash;
+            data.html_linkhash = "<div style='margin-top:5px;'><span class='linkhash'>" + home_url + data.hash.substring(0,12) + "</span></div><div style='display:block;margin-top:10px;height:20px;cursor:pointer;'><img src='/img/arrow-up.svg' width='20'></div>";
 
             // // Add data to DB using REST API
             // // @todo: protection from spammers
@@ -165,7 +175,7 @@ Vue.component('app-home', {
           preview_src = "";
           data_protected_design.preview_image = false;
           data_protected_design.preview_false = true;
-          data_protected_design.text_file_input = "Preview is not available for this file format.";
+          data_protected_design.text_file_input = "Preview is not available for this file format";
         }
       }
 
@@ -186,13 +196,17 @@ var data_protected_design = {
   text_file_size: 'Loading...',
   text_design_url: 'Loading...',
   text_tx_hash: 'Loading...',
+  text_tx_timestamp: 'Please wait...',
   text_tx_url: '',
   text_file_input: '',
   preview_text: false,
   preview_false: false,
   preview_image: false,
   preview_src: '',
-  state_dragdropfile: false
+  state_dragdropfile: false,
+  loader: false,
+  class_preview_image: 'preview-image', 
+  class_preview_image_loader: 'preview-image-loader'
 }
 
 Vue.component('app-protected-design', {
@@ -217,10 +231,27 @@ Vue.component('app-protected-design', {
               data_protected_design.text_design_url = home_url + response.body.shortlink;
               data_protected_design.text_message_ascii = hex2ascii(data_protected_design.message_hex);
               data_protected_design.text_tx_hash = response.body.tx_hash;
-              data_protected_design.text_tx_url = "https://ropsten.etherscan.io/tx/" + data_protected_design.text_tx_hash;
+              data_protected_design.text_tx_url = etherscan_url + "/tx/" + data_protected_design.text_tx_hash;
             }, response => {
               // error callback
             });
+
+            setTimeout(this.check_tx_timestamp, 3000);
+          }
+        }, response => {
+          // error callback
+        });
+      }
+    },
+    check_tx_timestamp: function() {
+      if (data_protected_design.text_status == "Protected" && data_protected_design.text_tx_timestamp == "Please wait...") {
+        Vue.http.get('wp-json/get_protected_design/get', {params: {shortlink: data_protected_design.hash.substring(0,12)}}).then(response => {
+          // success callback
+          if (response.body.tx_timestamp == "") {
+            setTimeout(this.check_tx_timestamp, 3000);
+          }
+          else {
+            data_protected_design.text_tx_timestamp = response.body.tx_timestamp;
           }
         }, response => {
           // error callback
@@ -235,6 +266,14 @@ Vue.component('app-protected-design', {
     },
     terms: function() {
       app.terms = !app.terms;
+      window.scrollTo(0, 0);
+    },
+    privacy: function() {
+      app.privacy = !app.privacy;
+      window.scrollTo(0, 0);
+    },
+    contacts: function() {
+      app.contacts = !app.contacts;
       window.scrollTo(0, 0);
     },
     cease: function() {
@@ -271,7 +310,6 @@ Vue.component('app-protected-design', {
           var sha256_hash = CryptoJS.SHA256(file_wordArr); // calculate SHA256 hash
           var calculated_hash = sha256_hash.toString();
 
-          // @todo: Remove legacy substring
           if (calculated_hash.substring(0,12) === data_protected_design.hash.substring(0,12)) {
             
             // Read file as data for visual preview
@@ -296,8 +334,7 @@ Vue.component('app-protected-design', {
           else {
             data_protected_design.preview_src = "";
             data_protected_design.preview_image = false;
-            data_protected_design.preview_text = true;
-            data_protected_design.text_file_input = "You have selected the wrong file. Please try again.";
+            data_protected_design.text_file_input = "You have selected the wrong file, please try again";
           }
 
           document.body.style.cursor = "default";
@@ -325,60 +362,69 @@ Vue.component('app-protected-design', {
         }
 
         button.addEventListener('click', function () {
-          instance.requestPaymentMethod(function (requestPaymentMethodErr, payload) {
+          if(document.getElementById('agree').checked) { 
 
-            if (requestPaymentMethodErr) {
-              // No payment method is available.
-              // An appropriate error will be shown in the UI.
-              console.error(requestPaymentMethodErr);
-              return;
-            }
-            else {
-              button.disabled = true;
-              button.innerHTML = "Please wait...";
-              button.style.backgroundColor = "#c9c9c9";
-              button.style.color = "#212121";
-              button.style.cursor = "default";
-            }
+            instance.requestPaymentMethod(function (requestPaymentMethodErr, payload) {
 
-            // Submit payload.nonce to server and update UI
-            Vue.http.get('wp-json/braintree/nonce', {params: {nonce: payload.nonce, hash: data_protected_design.hash}}).then(response => {
-              
-              if (response.body.success == true) {
-
-                // If message provided, add it to the end of hash
-                if (data_protected_design.message_hex != null) {
-                  submit_hash_message = data_protected_design.hash.substring(0,40) + data_protected_design.message_hex;
-                }
-                else {
-                  submit_hash_message = data_protected_design.hash.substring(0,40);
-                }
-
-                // Submit tx
-                Vue.http.get('wp-json/submit_tx/submit', {params: {hash: submit_hash_message}}).then(response => {
-                  // success callback
-                }, response => {
-                  // error callback
-                });
-
-                data_protected_design.text_status = "Pending";
-
-                // Get info from db
-                Vue.http.get('wp-json/get_protected_design/get', {params: {shortlink: data_protected_design.hash.substring(0,12)}}).then(response => {                
-                  data_protected_design.text_status = response.body.status;
-                  data_protected_design.text_tx_hash = response.body.tx_hash;
-                  data_protected_design.text_tx_url = "https://ropsten.etherscan.io/tx/" + data_protected_design.text_tx_hash;
-                }, response => {
-                  // error callback
-                });
-
+              if (requestPaymentMethodErr) {
+                // No payment method is available.
+                // An appropriate error will be shown in the UI.
+                console.error(requestPaymentMethodErr);
+                return;
+              }
+              else {
+                button.disabled = true;
+                button.innerHTML = "Please wait...";
+                button.style.backgroundColor = "#c9c9c9";
+                button.style.color = "#212121";
+                button.style.cursor = "default";
               }
 
-            }, response => {
-              // error callback
+              // Submit payload.nonce to server and update UI
+              Vue.http.get('wp-json/braintree/nonce', {params: {nonce: payload.nonce, hash: data_protected_design.hash}}).then(response => {
+                
+                if (response.body.success == true) {
+
+                  // If message provided, add it to the end of hash
+                  if (data_protected_design.message_hex != null) {
+                    submit_hash_message = data_protected_design.hash + data_protected_design.message_hex;
+                  }
+                  else {
+                    submit_hash_message = data_protected_design.hash;
+                  }
+
+                  // Create transaction hex
+                  Vue.http.get('wp-json/submit_tx/submit', {params: {hash: submit_hash_message}}).then(response => {
+                    // success callback
+                  }, response => {
+                    // error callback
+                  });
+
+                  // Change status and content on front end
+                  data_protected_design.text_status = "Pending";
+
+                  // Get info from db, update front end
+                  Vue.http.get('wp-json/get_protected_design/get', {params: {shortlink: data_protected_design.hash.substring(0,12)}}).then(response => {                
+                    data_protected_design.text_status = response.body.status;
+                    data_protected_design.text_tx_hash = response.body.tx_hash;
+                    data_protected_design.text_tx_url = etherscan_url + "/tx/" + data_protected_design.text_tx_hash;
+                  }, response => {
+                    // error callback
+                  });
+
+                }
+
+              }, response => {
+                // error callback
+              });
+
             });
 
-          });
+           } 
+           
+           else {
+            alert('Please read and agree to the Terms and Conditions'); return false;
+         }
         });
       });
     }
@@ -487,7 +533,7 @@ Vue.component('app-verify', {
         else {
           preview_src = "";
           data_protected_design.preview_false = true;
-          data_protected_design.text_file_input = "Drag and drop or click to select your file to verify it. Preview is not available for this file format.";
+          data_protected_design.text_file_input = "Drag and drop or click to select your file to verify it";
         }
         
       }
@@ -515,9 +561,10 @@ Vue.component('app-verify', {
           data_protected_design.text_status = response.body.status;
           data_protected_design.text_file_size = response.body.file_size + " bytes";
           data_protected_design.text_message_ascii = hex2ascii(data_protected_design.message_hex);
-          data_protected_design.text_hash = data_protected_design.hash.substring(0,40);
+          data_protected_design.text_hash = data_protected_design.hash;
           data_protected_design.text_tx_hash = response.body.tx_hash;
-          data_protected_design.text_tx_url = "https://ropsten.etherscan.io/tx/" + data_protected_design.text_tx_hash;
+          data_protected_design.text_tx_timestamp = response.body.tx_timestamp;
+          data_protected_design.text_tx_url = etherscan_url + "/tx/" + data_protected_design.text_tx_hash;
         }, response => {
           // error callback
         });
@@ -527,7 +574,7 @@ Vue.component('app-verify', {
           data_protected_design.preview_image = false;
           data_protected_design.preview_text = false;
           data_protected_design.preview_false = true;
-          data_protected_design.text_file_input = "Preview is not available for this file format.";
+          data_protected_design.text_file_input = "Preview is not available for this file format";
         }
       }
       else {
@@ -554,9 +601,22 @@ Vue.component('app-faq', {
 
 
 
+var data_cease = {
+  txt_country: '',
+  txt_date: '',
+  txt_name: '',
+  txt_ownersname: '',
+  txt_designtype: '',
+  txt_designname: '',
+  state_letter_generated: false
+}
+
 // Cease and desist letter component
 
 Vue.component('app-cease', {
+  data: function () {
+    return data_cease
+  },
   methods: {
     cease: function() {
       app.cease = !app.cease;
@@ -568,7 +628,7 @@ Vue.component('app-cease', {
 
 
 
-// Terms and conditions component
+// Terms and Conditions component
 
 Vue.component('app-terms', {
   methods: {
@@ -582,9 +642,55 @@ Vue.component('app-terms', {
 
 
 
+// Privacy Policy component
+
+Vue.component('app-privacy', {
+  methods: {
+    privacy: function() {
+      app.privacy = !app.privacy;
+      window.scrollTo(0, 0);
+    }
+  },
+  template: '#app-privacy-template'
+});
+
+
+
+// Contacts component
+
+Vue.component('app-contacts', {
+  methods: {
+    contacts: function() {
+      app.contacts = !app.contacts;
+      window.scrollTo(0, 0);
+    }
+  },
+  template: '#app-contacts-template'
+});
+
+
+
 // Footer component
 
 Vue.component('app-footer', {
+  methods: {
+    terms: function() {
+      app.terms = !app.terms;
+      window.scrollTo(0, 0);
+    },
+    faq: function() {
+      app.faq = !app.faq;
+      window.scrollTo(0, 0);
+    },
+    privacy: function() {
+      app.privacy = !app.privacy;
+      window.scrollTo(0, 0);
+    },
+    contacts: function() {
+      app.contacts = !app.contacts;
+      window.scrollTo(0, 0);
+    }
+  },
   template: '#app-footer-template'
 });
 
@@ -599,6 +705,8 @@ var app = new Vue({
     protected_design: false,
     faq: false,
     terms: false,
+    privacy: false,
+    contacts: false,
     cease: false,
     verify: false
   }
@@ -624,11 +732,13 @@ function pd_false() {
   data_protected_design.text_tx_hash = 'Loading...';
   data_protected_design.text_tx_url = '';
   data_protected_design.text_file_input = '';
+  data_protected_design.text_tx_timestamp = 'Please wait...';  
   data_protected_design.preview_text = false;
   data_protected_design.preview_false = false;
   data_protected_design.preview_image = false;
   data_protected_design.preview_src = '';
   data_protected_design.state_dragdropfile = false;
+  data_protected_design.loader = false;
 }
 
 window.onpopstate = function() {
@@ -751,4 +861,20 @@ function hex2ascii(hexx) {
   for (var i = 0; i < hex.length; i += 2)
       str += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
   return str;
+}
+
+
+
+// Select all text on click
+function selectText(containerid) {
+  if (document.selection) {
+      var range = document.body.createTextRange();
+      range.moveToElementText(document.getElementById(containerid));
+      range.select();
+  } else if (window.getSelection) {
+      var range = document.createRange();
+      range.selectNode(document.getElementById(containerid));
+      window.getSelection().removeAllRanges();
+      window.getSelection().addRange(range);
+  }
 }

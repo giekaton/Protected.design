@@ -1,7 +1,7 @@
 <?php
 
 //Connect to Mysql
-include_once "includes/_auth.php";
+include_once "_auth.php";
 
 // sql to create 'protected_designs' table
 
@@ -16,10 +16,13 @@ $sql = "CREATE TABLE `protected_designs` (
  `file_size` INT(32) NOT NULL,
  `preview` INT(1) NOT NULL,
  `tx_hex` VARCHAR(1000) NOT NULL,
+ `tx_block` VARCHAR(32) NOT NULL,
+ `tx_timestamp_hex` VARCHAR(32) NOT NULL,
  `tx_hash` VARCHAR(100) NOT NULL,
- `apiresult` MEDIUMTEXT NOT NULL,
  `errors` INT(2) NOT NULL,
+ `apiresult` MEDIUMTEXT NOT NULL,
  `paymentresult` MEDIUMTEXT NOT NULL,
+ `otherresult` MEDIUMTEXT NOT NULL, 
  PRIMARY KEY (`ID`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1";
 
