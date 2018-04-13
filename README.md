@@ -17,5 +17,3 @@ Server that does the tx signing contains the private key and other sensitive inf
 
 
 You can then use a preferred solution to sign transaction offline. Transaction hex should be returned to the app's broadcast_tx/tx endpoint with the correct auth token. Then the tx will be automatically broadcasted by the app to the Ethereum blockchain.
-
-To process payments, the app uses Braintree service. braintree-php-3.28.0 library should be added manually into /includes directory.
