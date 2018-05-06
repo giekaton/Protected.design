@@ -5,12 +5,15 @@ require_once 'setup/_auth.php';
 load_global_wpdb();
 
 $tx_hash = $_GET['tx_hash'];
-$shortlink = $_GET['shortlink'];
+
+if(empty($tx_hash)) {
+    exit();
+}
 
 $i = 0;
-get_timestamp($tx_hash, $i, $shortlink);
+get_timestamp($tx_hash, $i);
 
-function get_timestamp($tx_hash, $i, $shortlink) {
+function get_timestamp($tx_hash, $i) {
     sleep(15);
     global $wpdb;
 
@@ -25,7 +28,7 @@ function get_timestamp($tx_hash, $i, $shortlink) {
     $tx_block = $outputdecoded[result][blockNumber];
     
     if (!empty($tx_block)) {
-        $wpdb->update('protected_designs', array('tx_block' => $tx_block), array('shortlink' => $shortlink));
+        $wpdb->update('protected_designs', array('tx_block' => $tx_block), array('tx_timestamp_hex' => 'Pending'));
 
         sleep(1);
         // Get tx timestamp
@@ -39,25 +42,18 @@ function get_timestamp($tx_hash, $i, $shortlink) {
         $tx_timestamp_hex = $outputdecoded[result][timestamp];
         $tx_timestamp = hexdec($tx_timestamp_hex);
         $tx_timestamp = (gmdate("d M Y H:i:s", $tx_timestamp). " GMT");
-        $wpdb->update('protected_designs', array('tx_timestamp' => $tx_timestamp, 'tx_timestamp_hex' => $tx_timestamp_hex), array('shortlink' => $shortlink));
+        $wpdb->update('protected_designs', array('tx_timestamp' => $tx_timestamp, 'tx_timestamp_hex' => $tx_timestamp_hex), array('tx_timestamp_hex' => 'Pending'));
     }
     else {
         $i++;
-        if ($i < 40) {
-            get_timestamp($tx_hash, $i, $shortlink);
+        echo($i . " ");
+        if ($i < 20) {
+            get_timestamp($tx_hash, $i);
         }
         else {
-            $wpdb->update('protected_designs', array('tx_timestamp' => 'Error'), array('shortlink' => $shortlink));
+            $wpdb->update('protected_designs', array('tx_timestamp' => 'Error'), array('tx_timestamp_hex' => 'Pending'));
         }
     }
 }
-
-
-// // @todo: global check
-// if (empty($tx_hash) && empty($shortlink)) {
-//     get all from DB who are protected and doesn't have date
-//     check and update their dates
-// }
-
 
 ?>

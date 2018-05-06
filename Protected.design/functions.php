@@ -1,9 +1,7 @@
 <?php
 
-require_once 'includes/braintree-php-3.28.0/lib/Braintree.php';
-
 // Define myslq credentials, tx server host, Etherscan API and home url
-require_once 'includes/_auth.php';
+require_once 'setup/_auth.php';
 
 global $wpdb;
 
@@ -11,7 +9,7 @@ global $wpdb;
 function new_protected_design( $data ) {
     global $wpdb;
     $timestamp = date("Y-m-d H:i:s");
-    $status = "Waiting for payment";
+    $status = "Ready for protection";
     $paid = 0;
     $hash = $data['hash'];
     $shortlink = substr($hash, 0, 12);
@@ -27,8 +25,6 @@ function get_protected_design( $data ) {
     global $wpdb;
     
     $shortlink = $data['shortlink'];
-    
-    // /protected.design/wp-json/get_protected_design/get?shortlink=17a689cb55ef
 
     return $wpdb->get_row( "SELECT * FROM protected_designs WHERE shortlink = '$shortlink'" );
 
@@ -40,34 +36,112 @@ function set_message( $data ) {
     
     $message = $data['message'];
     $hash = $data['hash'];
+    $preview_url = $data['preview_url'];
 
-    return $wpdb->get_row( "UPDATE protected_designs SET message = '$message' WHERE hash = '$hash' AND status = 'Waiting for payment'" );
+    if ($preview_url) {
+        $wpdb->get_row( "UPDATE protected_designs SET preview_url = '$preview_url' WHERE hash = '$hash' AND status = 'Ready for protection'" );
+    }
+
+    return $wpdb->get_row( "UPDATE protected_designs SET message = '$message' WHERE hash = '$hash' AND status = 'Ready for protection'" );
 
 }
 
 
-function braintree( $data ) {
-    $nonceFromTheClient = $data['nonce'];
-    $hash = $data['hash'];
+require_once 'includes/cardinity/autoload.php';
 
-    $result = Braintree_Transaction::sale([
-        'amount' => '5.00',
-        'paymentMethodNonce' => $nonceFromTheClient,
-        'options' => [
-          'submitForSettlement' => True
-        ]
-      ]);
+use Cardinity\Client;
+use Cardinity\Method\Payment;
+use Cardinity\Exception;
 
-      if ($result->success) {
-        global $wpdb;
-        $wpdb->update('protected_designs', array('status' => 'Pending', 'paid' => '1', 'paymentresult' => $result), array('hash' => $hash));
-      } else {
-        global $wpdb;
-        // @todo: test error loging
-        $wpdb->update('protected_designs', array('paymentresult' => $result), array('hash' => $hash));
-      }
+function cardinity ( $data ) {
+    global $wpdb;
 
-      return($result);
+    $hashTrunc = $data['hashTrunc'];
+    $countryCode = $data['countryCode'];
+    $cardNr = $data['cardNr'];
+    $cardExpYear = $data['cardExpYear'];
+    $cardExpMonth = $data['cardExpMonth'];
+    $cardCVC = $data['cardCVC'];
+    $cardHolder = $data['cardHolder'];
+
+    $client = Client::create([
+        'consumerKey' => $GLOBALS['consumerKey'],
+        'consumerSecret' => $GLOBALS['consumerSecret'],
+    ]);
+
+    $method = new Payment\Create([
+        'amount' => 0.50,
+        'currency' => 'USD',
+        'settle' => true,
+        'description' => '3d-pass',
+        'order_id' => $hashTrunc,
+        'country' => $countryCode,
+        'payment_method' => Payment\Create::CARD,
+        'payment_instrument' => [
+            'pan' => $cardNr,
+            'exp_year' => (int)$cardExpYear,
+            'exp_month' => (int)$cardExpMonth,
+            'cvc' => $cardCVC,
+            'holder' => $cardHolder
+        ],
+    ]);
+
+    $errors = [];
+
+    try {
+        /** @type Cardinity\Method\Payment\Payment */
+        $payment = $client->call($method);
+    } catch (Cardinity\Exception\InvalidAttributeValue $exception) {
+        foreach ($exception->getViolations() as $key => $violation) {
+            array_push($errors, $violation->getPropertyPath() . ' ' . $violation->getMessage());
+        }
+    } catch (Cardinity\Exception\ValidationFailed $exception) {
+        foreach ($exception->getErrors() as $key => $error) {
+            array_push($errors, $error['message']);
+        }
+    } catch (Cardinity\Exception\Declined $exception) {
+        foreach ($exception->getErrors() as $key => $error) {
+            array_push($errors, $error['message']);
+        }
+    } catch (Cardinity\Exception\NotFound $exception) {
+        foreach ($exception->getErrors() as $key => $error) {
+            array_push($errors, $error['message']);
+        }
+    } catch (Exception $exception) {
+        $errors = [
+            $exception->getMessage(),
+            $exception->getPrevious()->getMessage()
+        ];
+    }
+
+    if ($errors) {
+        $wpdb->update('protected_designs', array('paymentresult' => $errors[0]), array('shortlink' => $hashTrunc));
+
+        return $errors;
+    }
+    else {
+        $status = $payment->getStatus();
+        
+        if ($status == 'approved') {
+            $wpdb->update('protected_designs', array( 'status' => 'Pending', 'paid' => '1', 'paymentresult' => $status, 'protection_type' => '1'), array('shortlink' => $hashTrunc));
+            
+            return $status;
+        }
+        elseif ($status == 'pending') {
+            $auth = $payment->getAuthorizationInformation();
+            $payment_id = $payment->getId();
+
+            $pending = [
+                'ThreeDForm' => $auth->getUrl(),
+                'PaReq' => $auth->getData(),
+                'MD' => $payment->getOrderId(),
+                'PaymentId' => $payment_id,
+            ];
+
+            $wpdb->update('protected_designs', array( 'status' => 'Pending payment', 'paymentresult' => $status, 'payment_id' => $payment_id, 'protection_type' => '1'), array('shortlink' => $hashTrunc));
+            return $pending;
+        }
+    }
 }
 
 
@@ -75,7 +149,6 @@ function submit_tx( $data ) {
 
     $hash = $data['hash'];
     $shortlink = substr($hash, 0, 12);
-    // echo($GLOBALS['tx_server'] . "?hash=" . $hash);
 
     global $wpdb;
     $dbresult = $wpdb->get_row( "SELECT * FROM protected_designs WHERE shortlink = '$shortlink'" );
@@ -84,8 +157,10 @@ function submit_tx( $data ) {
     $status = $dbresult->status;
     
     if ($paid == '1' && $status != 'Protected') {
-        // @todo: if status paid = 1, then execute following script
-        $ch = curl_init($GLOBALS['tx_server'] . "?hash=" . $hash . "&auth=" . $GLOBALS['linux_auth_token']);
+        // Inform admin
+        mail($GLOBALS['admin_email'], 'PD PAID ' . $shortlink, $shortlink);
+
+        $ch = curl_init($GLOBALS['tx_server'] . ".php?hash=" . $hash . "&auth=" . $GLOBALS['linux_auth_token']);
         curl_exec($ch);
 
         // @todo: test error loging
@@ -97,6 +172,17 @@ function submit_tx( $data ) {
             mail($GLOBALS['admin_email'], 'PD Error', 'Linux server not accessible');
         }
     }
+
+}
+
+
+function submit_tx_2( $data ) {
+
+    $hash = $data['hash'];
+    $shortlink = substr($hash, 0, 12);
+
+    global $wpdb;
+    $wpdb->update('protected_designs', array('protection_type' => '2', 'status' => 'Scheduled'), array('shortlink' => substr($hash, 0, 12)));
 
 }
 
@@ -128,37 +214,59 @@ function broadcast_tx( $data ) {
         
         $tx_hash = $outputdecoded["result"];
 
+        $errorsrow = $wpdb->get_row( "SELECT * FROM protected_designs WHERE shortlink = '$shortlink'" );
+        $errors = $errorsrow->errors;
+        $error_log = $errorsrow->error_log;
+        $apiresult = $errorsrow->apiresult;
+
+        $error_log = $error_log . ", " . $outputdecoded["error"]["message"];
+        $apiresult = $apiresult . " XXX " . $output2;
+
         // If transaction was not broadcasted, then submit transaction again, until there is no error
-        if ($outputdecoded["error"]) {
+        if (empty($outputdecoded["result"])) {
 
-            // $errors = $wpdb->get_var( "SELECT errors FROM $wpdb->protected_designs WHERE shortlink = '$shortlink'" );
-            $errorsrow = $wpdb->get_row( "SELECT * FROM protected_designs WHERE shortlink = '$shortlink'" );
-            $errors = $errorsrow->errors;
-
-            if ($errors < 30) {
-                sleep(10);
+            if ($errors < 40) {
+                sleep(15);
 
                 $errors = $errors + 1;
 
-                $wpdb->update('protected_designs', array('tx_hash' => $tx_hash, 'status' => 'Pending', 'apiresult' => $output2, 'errors' => $errors), array('shortlink' => $shortlink));
-                
-                // file_get_contents($GLOBALS['tx_server'] . "?hash=" . $hash . "&auth=" . $GLOBALS['linux_auth_token']);
-                $ch = curl_init($GLOBALS['tx_server'] . "?hash=" . $hash . "&auth=" . $GLOBALS['linux_auth_token']);
-                curl_exec($ch);
-                curl_close($ch);
 
-                echo("\n\nError nr: " . $errors);
+                $wpdb->update('protected_designs', array('tx_hash' => $tx_hash, 'status' => 'Pending', 'apiresult' => $apiresult, 'errors' => $errors, 'error_log' => $error_log), array('shortlink' => $shortlink));
+                
+                // if ($errors % 3 == 0) {
+                //     $ch = curl_init($GLOBALS['tx_server'] . "_3.php?hash=" . $hash . "&auth=" . $GLOBALS['linux_auth_token']);
+                //     curl_exec($ch);
+                //     curl_close($ch);
+                // }
+
+                if ($errors % 2 == 0) {
+                    $ch = curl_init($GLOBALS['tx_server'] . "_2.php?hash=" . $hash . "&auth=" . $GLOBALS['linux_auth_token']);
+                    curl_exec($ch);
+                    curl_close($ch);
+                }
+
+                else if ($errors % 1 == 0) {
+                    $ch = curl_init($GLOBALS['tx_server'] . ".php?hash=" . $hash . "&auth=" . $GLOBALS['linux_auth_token']);
+                    curl_exec($ch);
+                    curl_close($ch);
+                }
+
 
             }
             else {
-                $wpdb->update('protected_designs', array('tx_hash' => $tx_hash, 'status' => 'Error', 'apiresult' => $output2), array('shortlink' => $shortlink));
+                $wpdb->update('protected_designs', array('tx_hash' => $tx_hash, 'status' => 'Error', 'apiresult' => $apiresult), array('shortlink' => $shortlink));
                 
             }
         }
         else {
-            $wpdb->update('protected_designs', array('tx_hash' => $tx_hash, 'status' => 'Protected', 'apiresult' => $output2), array('shortlink' => $shortlink));
+            if (strlen($tx_hash) != 66) {
+                $wpdb->update('protected_designs', array('tx_hash' => $tx_hash, 'status' => 'Error', 'apiresult' => $apiresult, 'otherresult' => 'error_tx_hash'), array('shortlink' => $shortlink));
+                return "error_tx_hash";
+            }
             
-            file_get_contents(get_stylesheet_directory_uri() . '/check_tx_timestamp.php?tx_hash=' . $tx_hash . '&shortlink=' . $shortlink);
+            $wpdb->update('protected_designs', array('tx_hash' => $tx_hash, 'status' => 'Protected', 'apiresult' => $apiresult), array('shortlink' => $shortlink));
+            
+            file_get_contents(get_stylesheet_directory_uri() . '/check_tx_timestamp' . $GLOBALS['link_end'] . '?tx_hash=' . $tx_hash . '&shortlink=' . $shortlink);
         }
     }
 }
@@ -169,8 +277,16 @@ function php_hash( $data ) {
     
     $preview_src = $data['preview_src'];
     
-    $sha256_hash = hash_file('sha256', $preview_src);
-    return($sha256_hash);
+    $head = array_change_key_case(get_headers($preview_src, TRUE));
+    $filesize = $head['content-length'];
+
+    if (intval($filesize) < 15000000) {
+        $sha256_hash = hash_file('sha256', $preview_src);
+        return($sha256_hash);
+    }
+    else {
+        return("error_size");
+    }
 }
 
 
@@ -191,9 +307,9 @@ add_action( 'rest_api_init', function () {
         'callback' => 'php_hash'
     ) );
 
-    register_rest_route( 'braintree', '/nonce', array(
+    register_rest_route( 'cardinity', '/set', array(
         'methods' => 'GET',
-        'callback' => 'braintree'
+        'callback' => 'cardinity'
     ) );
 
     register_rest_route( 'set_message', '/set', array(
@@ -204,6 +320,11 @@ add_action( 'rest_api_init', function () {
     register_rest_route( 'submit_tx', '/submit', array(
         'methods' => 'GET',
         'callback' => 'submit_tx'
+    ) );
+
+    register_rest_route( 'submit_tx_2', '/submit', array(
+        'methods' => 'GET',
+        'callback' => 'submit_tx_2'
     ) );
 
     register_rest_route( 'broadcast_tx', '/tx', array(
